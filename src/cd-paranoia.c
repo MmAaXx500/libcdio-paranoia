@@ -694,6 +694,7 @@ int main(int argc, char *argv[]) {
   int query_only = 0;
   int batch = 0;
   int all_sectors = 0;
+  int span_set = 0;
   int run_cache_test = 0;
   long int force_cdrom_overlap = -1;
   long int force_cdrom_sectors = -1;
@@ -937,7 +938,7 @@ int main(int argc, char *argv[]) {
   }
 
   if (optind >= argc && !query_only) {
-    if (batch)
+    if (batch || all_sectors)
       span = NULL;
     else {
       /* D'oh.  No span. Fetch me a brain, Igor. */
@@ -1182,13 +1183,20 @@ int main(int argc, char *argv[]) {
     long batch_first;
     long batch_last;
     int batch_track;
+    char *span_copy = span;
 
     if (all_sectors) {
-      if (span)
-        report("Warning: all-sectors requested, overriding span");
+      /* explicitly turn off span, we're grabbing everything,
+       * but save the argument itself for the report */
+      span = NULL;
 
-      /* explicitly turn off span, we're grabbing everything */
-      span = 0;
+      /* check if both a span and --all-sectors were provided */
+      if (optind + 1 < argc) {
+        report(
+            "WARNING: --all-sectors option overrides user-provided span (%s)\n",
+            span_copy);
+        span_set = 1;
+      }
     }
 
     if (span) {
@@ -1319,6 +1327,7 @@ int main(int argc, char *argv[]) {
       while (cursor <= i_last_lsn) {
         char outfile_name[PATH_MAX];
         if (all_sectors) {
+          batch_first = cursor;
           batch_track = cdda_disc_firstsector(d);
           batch_last = cdda_disc_lastsector(d);
           if (batch_last > i_last_lsn)
@@ -1338,8 +1347,14 @@ int main(int argc, char *argv[]) {
         callbegin = batch_first;
         callend = batch_last;
 
-        /* argv[optind] is the span, argv[optind+1] (if exists) is outfile */
+        if (all_sectors) {
+          /* decrement optind to ignore an empty span so outfile can
+           * still be named correctly */
+          if (!span_set)
+            optind = optind - 1;
+        }
 
+        /* argv[optind] is the span, argv[optind+1] (if exists) is outfile */
         if (optind + 1 < argc) {
           if (!strcmp(argv[optind + 1], "-")) {
             out = dup(fileno(stdout));
